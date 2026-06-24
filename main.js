@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 
-// ── Settings ──────────────────────────────────────────────────────────
+// ── Settings (persisted to localStorage) ─────────────────────────────
 const defaultSettings = {
   httpsOnly:       true,
   trackerBlocking: true,
@@ -23,31 +23,31 @@ function saveSettings(s) {
 let settings = loadSettings();
 
 // ── State ─────────────────────────────────────────────────────────────
-let tabs         = [];
-let activeTabId  = null;
-let tabCounter   = 0;
+let tabs        = [];
+let activeTabId = null;
+let tabCounter  = 0;
 let totalBlocked = 0;
 
 // ── DOM refs ──────────────────────────────────────────────────────────
-const tabsEl         = document.getElementById("tabs");
-const contentArea    = document.getElementById("content-area");
-const addressBar     = document.getElementById("address-bar");
-const backBtn        = document.getElementById("back-btn");
-const forwardBtn     = document.getElementById("forward-btn");
-const refreshBtn     = document.getElementById("refresh-btn");
-const newTabBtn      = document.getElementById("new-tab-btn");
-const settingsBtn    = document.getElementById("settings-btn");
-const httpsBadge     = document.getElementById("https-badge");
-const trackerCount   = document.getElementById("tracker-count");
-const totalBlockedEl = document.getElementById("total-blocked");
-const newTabPage     = document.getElementById("new-tab-page");
-const searchInput    = document.getElementById("search-input");
-const searchBtn      = document.getElementById("search-btn");
-const settingsPanel  = document.getElementById("settings-panel");
-const settingsClose  = document.getElementById("settings-close");
-const clearDataBtn   = document.getElementById("clear-data-btn");
+const tabsEl        = document.getElementById("tabs");
+const contentArea   = document.getElementById("content-area");
+const addressBar    = document.getElementById("address-bar");
+const backBtn       = document.getElementById("back-btn");
+const forwardBtn    = document.getElementById("forward-btn");
+const refreshBtn    = document.getElementById("refresh-btn");
+const newTabBtn     = document.getElementById("new-tab-btn");
+const settingsBtn   = document.getElementById("settings-btn");
+const httpsBadge    = document.getElementById("https-badge");
+const trackerCount  = document.getElementById("tracker-count");
+const totalBlockedEl= document.getElementById("total-blocked");
+const newTabPage    = document.getElementById("new-tab-page");
+const searchInput   = document.getElementById("search-input");
+const searchBtn     = document.getElementById("search-btn");
+const settingsPanel = document.getElementById("settings-panel");
+const settingsClose = document.getElementById("settings-close");
+const clearDataBtn  = document.getElementById("clear-data-btn");
 
-// ── Tracker blocklist ─────────────────────────────────────────────────
+// ── Tracker blocklist (expanded) ──────────────────────────────────────
 const TRACKERS = [
   "google-analytics.com","googletagmanager.com","googletagservices.com",
   "googlesyndication.com","doubleclick.net","connect.facebook.net",
@@ -57,9 +57,10 @@ const TRACKERS = [
   "crazyegg.com","optimizely.com","adroll.com","criteo.com","criteo.net",
   "amazon-adsystem.com","ads.linkedin.com","mc.yandex.ru","ads.yahoo.com",
   "outbrain.com","taboola.com","chartbeat.com","newrelic.com",
-  "clarity.ms","bat.bing.com","static.ads-twitter.com",
+  "clarity.ms","bat.bing.com","static.ads-twitter.com","analytics.google.com",
   "cdn.heapanalytics.com","cdn.amplitude.com","api.amplitude.com",
   "api.segment.io","cdn.segment.com","sentry.io","bugsnag.com",
+  "logrocket.com","inspectlet.com","luckyorange.com","kissmetrics.com",
 ];
 
 function isTracker(url) {
@@ -77,8 +78,10 @@ function normaliseUrl(input) {
     (/\./.test(trimmed) && !/\s/.test(trimmed));
 
   if (looksLikeUrl) {
-    if (trimmed.startsWith("http://") && settings.httpsOnly) {
-      return trimmed.replace("http://", "https://");
+    if (settings.httpsOnly) {
+      return trimmed.startsWith("http://")
+        ? trimmed.replace("http://", "https://")
+        : trimmed.startsWith("https://") ? trimmed : `https://${trimmed}`;
     }
     return trimmed.startsWith("http") ? trimmed : `https://${trimmed}`;
   }
@@ -95,19 +98,6 @@ function updateHttpsBadge(url) {
   }
 }
 
-// ── Force layout fix ──────────────────────────────────────────────────
-// Prevents the iframe from taking over the full screen before the
-// browser chrome has finished laying out.
-function forceReflow() {
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      contentArea.style.display = "none";
-      void contentArea.offsetHeight; // trigger reflow
-      contentArea.style.display = "";
-    });
-  });
-}
-
 // ── Tab management ────────────────────────────────────────────────────
 function createTab(url = null) {
   const id = ++tabCounter;
@@ -120,7 +110,6 @@ function createTab(url = null) {
     renderTabBar();
     switchTab(id);
   }
-
   return tab;
 }
 
@@ -128,12 +117,13 @@ function closeTab(id) {
   const idx = tabs.findIndex(t => t.id === id);
   if (idx === -1) return;
 
+  // Remove the iframe from DOM
   const tab = tabs[idx];
   if (tab.iframe) tab.iframe.remove();
+
   tabs.splice(idx, 1);
 
   if (tabs.length === 0) { createTab(); return; }
-
   const next = tabs[Math.min(idx, tabs.length - 1)];
   renderTabBar();
   switchTab(next.id);
@@ -144,27 +134,19 @@ function switchTab(id) {
   const tab = tabs.find(t => t.id === id);
   if (!tab) return;
 
-  // Hide all tab content panels
-  document.querySelectorAll(".tab-content").forEach(el => {
-    el.classList.remove("active");
-    el.style.display = "none";
-  });
+  // Show/hide content
+  document.querySelectorAll(".tab-content").forEach(el => el.classList.remove("active"));
 
   if (!tab.url) {
-    // Show new tab page
-    newTabPage.style.display = "flex";
     newTabPage.classList.add("active");
     totalBlockedEl.textContent = totalBlocked;
   } else if (tab.iframe) {
-    // Show this tab's iframe wrapper
-    tab.iframe.style.display = "block";
     tab.iframe.classList.add("active");
-    forceReflow();
   }
 
-  addressBar.value   = tab.url || "";
-  trackerCount.textContent = tab.blocked;
+  addressBar.value = tab.url || "";
   updateHttpsBadge(tab.url);
+  trackerCount.textContent = tab.blocked;
   renderTabBar();
 }
 
@@ -195,7 +177,9 @@ function navigateTo(rawUrl, tabId = activeTabId, isNew = false) {
   const url = normaliseUrl(rawUrl);
   if (!url) return;
 
+  // Block trackers
   if (isTracker(url)) {
+    console.log("Whiskers blocked tracker:", url);
     const tab = tabs.find(t => t.id === tabId);
     if (tab) { tab.blocked++; totalBlocked++; }
     trackerCount.textContent = tabs.find(t => t.id === tabId)?.blocked || 0;
@@ -207,63 +191,56 @@ function navigateTo(rawUrl, tabId = activeTabId, isNew = false) {
   if (!tab) return;
 
   tab.url = url;
-  tab.title = (() => { try { return new URL(url).hostname; } catch { return "Loading..."; } })();
+  tab.title = new URL(url).hostname || "Loading...";
 
-  // Create iframe wrapper if this is the first navigation for this tab
+  // Create iframe if it doesn't exist yet
   if (!tab.iframe) {
     const wrapper = document.createElement("div");
     wrapper.className = "tab-content";
-    wrapper.style.display = "none";
-    wrapper.style.position = "absolute";
-    wrapper.style.inset = "0";
 
     const iframe = document.createElement("iframe");
     iframe.className = "tab-iframe";
-    iframe.style.width = "100%";
-    iframe.style.height = "100%";
-    iframe.style.border = "none";
-    iframe.style.display = "block";
     iframe.setAttribute("sandbox", "allow-scripts allow-same-origin allow-forms allow-popups allow-top-navigation");
 
+    // Inject WebRTC blocking script
     if (settings.blockWebRTC) {
       iframe.setAttribute("allow", "");
     }
 
-    iframe.addEventListener("load", () => {
-      try {
-        const iframeWin = iframe.contentWindow;
-        if (iframeWin && settings.blockWebRTC) {
-          iframeWin.RTCPeerConnection          = undefined;
-          iframeWin.webkitRTCPeerConnection    = undefined;
-          iframeWin.mozRTCPeerConnection       = undefined;
-        }
-        const title = iframe.contentDocument?.title;
-        if (title) { tab.title = title; renderTabBar(); }
-        // Update address bar with final URL after redirects
-        try {
-          const finalUrl = iframe.contentWindow?.location?.href;
-          if (finalUrl && finalUrl !== "about:blank") {
-            tab.url = finalUrl;
-            if (tabId === activeTabId) {
-              addressBar.value = finalUrl;
-              updateHttpsBadge(finalUrl);
-            }
-          }
-        } catch (_) {}
-      } catch (_) {}
-    });
-
     wrapper.appendChild(iframe);
     contentArea.appendChild(wrapper);
     tab.iframe = wrapper;
+
+    iframe.addEventListener("load", () => {
+      try {
+        const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+        if (iframeDoc && settings.blockWebRTC) {
+          iframe.contentWindow.eval(`
+            if (typeof RTCPeerConnection !== 'undefined') {
+              window.RTCPeerConnection = undefined;
+              window.webkitRTCPeerConnection = undefined;
+            }
+          `);
+        }
+        const title = iframeDoc?.title;
+        if (title) { tab.title = title; renderTabBar(); }
+      } catch (_) {}
+    });
   }
 
-  // Navigate
+  // Navigate the iframe
   const iframe = tab.iframe.querySelector("iframe");
   iframe.src = url;
 
-  renderTabBar();
-  switchTab(tabId);
+  if (!isNew) {
+    switchTab(tabId);
+  } else {
+    renderTabBar();
+    switchTab(tabId);
+  }
+
+  addressBar.value = url;
+  updateHttpsBadge(url);
 }
 
 // ── Event listeners ───────────────────────────────────────────────────
@@ -274,12 +251,12 @@ addressBar.addEventListener("focus", () => addressBar.select());
 
 backBtn.addEventListener("click", () => {
   const tab = tabs.find(t => t.id === activeTabId);
-  try { tab?.iframe?.querySelector("iframe")?.contentWindow?.history.back(); } catch (_) {}
+  tab?.iframe?.querySelector("iframe")?.contentWindow?.history.back();
 });
 
 forwardBtn.addEventListener("click", () => {
   const tab = tabs.find(t => t.id === activeTabId);
-  try { tab?.iframe?.querySelector("iframe")?.contentWindow?.history.forward(); } catch (_) {}
+  tab?.iframe?.querySelector("iframe")?.contentWindow?.history.forward();
 });
 
 refreshBtn.addEventListener("click", () => {
@@ -302,6 +279,7 @@ searchInput.addEventListener("keydown", e => { if (e.key === "Enter") doSearch()
 // ── Settings ──────────────────────────────────────────────────────────
 settingsBtn.addEventListener("click", () => {
   settingsPanel.classList.remove("hidden");
+  // Sync toggles to current settings
   document.getElementById("toggle-https").checked    = settings.httpsOnly;
   document.getElementById("toggle-trackers").checked = settings.trackerBlocking;
   document.getElementById("toggle-cookies").checked  = settings.blockCookies;
@@ -310,24 +288,24 @@ settingsBtn.addEventListener("click", () => {
 });
 
 settingsClose.addEventListener("click", () => settingsPanel.classList.add("hidden"));
+
 settingsPanel.addEventListener("click", e => {
   if (e.target === settingsPanel) settingsPanel.classList.add("hidden");
 });
 
-document.getElementById("toggle-https").addEventListener("change",   e => { settings.httpsOnly       = e.target.checked; saveSettings(settings); });
-document.getElementById("toggle-trackers").addEventListener("change", e => { settings.trackerBlocking = e.target.checked; saveSettings(settings); });
-document.getElementById("toggle-cookies").addEventListener("change",  e => { settings.blockCookies    = e.target.checked; saveSettings(settings); });
-document.getElementById("toggle-webrtc").addEventListener("change",   e => { settings.blockWebRTC     = e.target.checked; saveSettings(settings); });
-document.getElementById("search-engine").addEventListener("change",   e => { settings.searchEngine    = e.target.value;   saveSettings(settings); });
+document.getElementById("toggle-https").addEventListener("change",    e => { settings.httpsOnly = e.target.checked;       saveSettings(settings); });
+document.getElementById("toggle-trackers").addEventListener("change",  e => { settings.trackerBlocking = e.target.checked; saveSettings(settings); });
+document.getElementById("toggle-cookies").addEventListener("change",   e => { settings.blockCookies = e.target.checked;    saveSettings(settings); });
+document.getElementById("toggle-webrtc").addEventListener("change",    e => { settings.blockWebRTC = e.target.checked;     saveSettings(settings); });
+document.getElementById("search-engine").addEventListener("change",    e => { settings.searchEngine = e.target.value;      saveSettings(settings); });
 
 clearDataBtn.addEventListener("click", () => {
   if (confirm("Clear all browsing data? This will close all tabs.")) {
     localStorage.clear();
     tabs.forEach(tab => tab.iframe?.remove());
     tabs = [];
-    tabCounter   = 0;
+    tabCounter = 0;
     totalBlocked = 0;
-    settings = { ...defaultSettings };
     settingsPanel.classList.add("hidden");
     createTab();
   }

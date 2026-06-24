@@ -9,20 +9,20 @@
   <body>
     <div id="browser">
 
-      <!-- ── Tab bar ───────────────────────────────────────────────── -->
-      <div id="tab-bar">
+      <!-- Tab bar -->
+      <div id="tab-bar" data-tauri-drag-region>
         <div id="tabs"></div>
         <button id="new-tab-btn" title="New tab">+</button>
       </div>
 
-      <!-- ── Navigation bar ───────────────────────────────────────── -->
+      <!-- Navigation bar -->
       <div id="nav-bar">
-        <button class="nav-btn" id="back-btn" title="Back">&#8592;</button>
+        <button class="nav-btn" id="back-btn"    title="Back">&#8592;</button>
         <button class="nav-btn" id="forward-btn" title="Forward">&#8594;</button>
         <button class="nav-btn" id="refresh-btn" title="Refresh">&#8635;</button>
 
         <div id="address-bar-wrap">
-          <span id="https-badge">🔒</span>
+          <span id="https-badge" title="Secure connection (HTTPS)">🔒</span>
           <input
             id="address-bar"
             type="text"
@@ -35,13 +35,15 @@
         <div id="tracker-badge" title="Trackers blocked on this page">
           🛡 <span id="tracker-count">0</span>
         </div>
+
+        <button class="nav-btn" id="settings-btn" title="Settings">⚙</button>
       </div>
 
-      <!-- ── WebView / content area ────────────────────────────────── -->
-      <div id="webview-container">
-        <!-- Tauri injects the actual WebView here at runtime.       -->
-        <!-- The new-tab page is shown when no URL is loaded.        -->
-        <div id="new-tab-page">
+      <!-- Content area -->
+      <div id="content-area">
+
+        <!-- New tab page -->
+        <div id="new-tab-page" class="tab-content active">
           <div id="new-tab-inner">
             <div id="logo">🐱 Whiskers</div>
             <p id="tagline">Private by default. Honest about it.</p>
@@ -55,9 +57,82 @@
               <button id="search-btn">Go</button>
             </div>
             <div id="stats-bar">
-              <span>🛡 <strong id="total-blocked">0</strong> trackers blocked total</span>
+              🛡 <strong id="total-blocked">0</strong> trackers blocked this session
             </div>
           </div>
+        </div>
+
+      </div>
+
+      <!-- Settings panel -->
+      <div id="settings-panel" class="hidden">
+        <div id="settings-inner">
+          <div id="settings-header">
+            <h2>Settings</h2>
+            <button id="settings-close">✕</button>
+          </div>
+
+          <div class="setting-row">
+            <div>
+              <p class="setting-label">HTTPS Only</p>
+              <p class="setting-desc">Block all unencrypted HTTP connections</p>
+            </div>
+            <label class="toggle">
+              <input type="checkbox" id="toggle-https" checked />
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <div class="setting-row">
+            <div>
+              <p class="setting-label">Tracker Blocking</p>
+              <p class="setting-desc">Block known trackers and analytics scripts</p>
+            </div>
+            <label class="toggle">
+              <input type="checkbox" id="toggle-trackers" checked />
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <div class="setting-row">
+            <div>
+              <p class="setting-label">Block Third-Party Cookies</p>
+              <p class="setting-desc">Prevent cross-site tracking via cookies</p>
+            </div>
+            <label class="toggle">
+              <input type="checkbox" id="toggle-cookies" checked />
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <div class="setting-row">
+            <div>
+              <p class="setting-label">WebRTC Leak Prevention</p>
+              <p class="setting-desc">Stop sites from discovering your real IP</p>
+            </div>
+            <label class="toggle">
+              <input type="checkbox" id="toggle-webrtc" checked />
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <div class="setting-row">
+            <div>
+              <p class="setting-label">Default Search Engine</p>
+              <p class="setting-desc">Used for searches from the address bar</p>
+            </div>
+            <select id="search-engine">
+              <option value="https://duckduckgo.com/?q=">DuckDuckGo</option>
+              <option value="https://search.brave.com/search?q=">Brave Search</option>
+              <option value="https://www.google.com/search?q=">Google</option>
+            </select>
+          </div>
+
+          <button id="clear-data-btn">Clear Browsing Data</button>
+
+          <p class="setting-footer">
+            Whiskers v0.1.0 — open source, no telemetry, no data collection.
+          </p>
         </div>
       </div>
 
